@@ -30,14 +30,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="../styles/catalogo.css?v=5">
-    <link rel="stylesheet" href="../styles/eventos.css?v=7">
+    <link rel="stylesheet" href="../styles/eventos.css?v=8">
     <link rel="shortcut icon" href="../favicon.ico" type="image/x-icon">
 </head>
 <body>
     <a href="#main-content" class="skip-to-main">Pular para conteúdo principal</a>
     <header>
         <div id="container-header">
-            <a href="../index.html"><img src="../assets/images/AbrigodaMarcia_logo.png"></a>
+            <a href="../index.html"><img src="../assets/images/AbrigodaMarcia_logo.png" alt="Abrigo da Márcia"></a>
 
             <div id="container-header-nav">
                 <nav>
@@ -124,10 +124,10 @@
                     </ul>
                 </div>
                 <div id="social-media-links">
-                    <a target="_blank" href="https://www.facebook.com/abrigodamarcia">
+                    <a rel="noopener noreferrer" target="_blank" href="https://www.facebook.com/abrigodamarcia">
                         <img src="../assets/images/facebook-logo.png" alt="Logo do Facebook">
                     </a>
-                    <a target="_blank" href="https://www.instagram.com/abrigodamarcia/">
+                    <a rel="noopener noreferrer" target="_blank" href="https://www.instagram.com/abrigodamarcia/">
                         <img src="../assets/images/instagram-logo.png" alt="Logo do Instagram">
                     </a>
                 </div>
@@ -135,13 +135,13 @@
         </div>
         <div id="footer-credits">
             <span id="copyright-text">&copy; 2025 Abrigo da Márcia.</span>
-            <span>Site criado por <a target="_blank" href="https://www.linkedin.com/in/icaro-pavan/">Ícaro C. Pavan</a> e <a target="_blank" href="https://www.linkedin.com/in/jeferson-tomaz-2a901b83/">Jeferson T. Querino</a></span>
+            <span>Site criado por <a rel="noopener noreferrer" target="_blank" href="https://www.linkedin.com/in/icaro-pavan/">Ícaro C. Pavan</a> e <a rel="noopener noreferrer" target="_blank" href="https://www.linkedin.com/in/jeferson-tomaz-2a901b83/">Jeferson T. Querino</a></span>
         </div>
     </footer>
 
     <!-- Modal: reserva de número da rifa -->
     <div id="reserve-modal" class="reserve-modal" style="display: none;">
-        <div class="reserve-modal-content">
+        <div class="reserve-modal-content" role="dialog" aria-modal="true" aria-labelledby="reserve-title">
             <button class="reserve-modal-close" id="reserve-modal-close" aria-label="Fechar">&times;</button>
 
             <!-- Passo 1: formulário -->
@@ -186,7 +186,7 @@
     <script src="../js/theme-toggle.js?v=2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="../js/pix.js?v=1"></script>
-    <script type="module" src="../js/render-events.js?v=8"></script>
+    <script type="module" src="../js/render-events.js?v=9"></script>
     <script src="../js/date.js"></script>
     <script src="../js/mobile-menu.js"></script>
 </body>

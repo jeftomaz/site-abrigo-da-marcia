@@ -47,6 +47,14 @@ create table if not exists events (
   raffle_max_per_reservation integer not null default 5
                        check (raffle_max_per_reservation between 1 and 50),  -- nºs por reserva
   raffle_prize         text,
+  raffle_prizes        jsonb       not null default '[]'
+                       check (
+                         jsonb_typeof(raffle_prizes) = 'array'
+                         and case when jsonb_typeof(raffle_prizes) = 'array'
+                           then jsonb_array_length(raffle_prizes) <= 3
+                           else false
+                         end
+                       ),
   raffle_winner_number integer     check (raffle_winner_number is null or raffle_winner_number >= 1),
   -- marca quando um evento arquivado foi reaberto para correção (histórico):
   -- enquanto arquivado as reservas são somente-leitura no admin; reabrir
@@ -88,6 +96,29 @@ alter table events add column if not exists raffle_max_per_reservation integer n
 alter table events drop constraint if exists events_raffle_max_check;
 alter table events add constraint events_raffle_max_check
   check (raffle_max_per_reservation between 1 and 50);
+
+-- Migração: até 3 prêmios por rifa, cada um com nome, imagem e número
+-- vencedor próprio. Os campos antigos seguem existindo como fallback para
+-- instalações em transição.
+alter table events add column if not exists raffle_prizes jsonb not null default '[]';
+update events
+   set raffle_prizes = jsonb_build_array(jsonb_build_object(
+       'name', coalesce(raffle_prize, 'Prêmio'),
+       'image_url', '',
+       'winner_number', raffle_winner_number
+   ))
+ where type = 'rifa'
+   and raffle_prizes = '[]'::jsonb
+   and (raffle_prize is not null or raffle_winner_number is not null);
+alter table events drop constraint if exists events_raffle_prizes_arr;
+alter table events add constraint events_raffle_prizes_arr
+  check (
+    jsonb_typeof(raffle_prizes) = 'array'
+    and case when jsonb_typeof(raffle_prizes) = 'array'
+      then jsonb_array_length(raffle_prizes) <= 3
+      else false
+    end
+  );
 
 -- Migração: registro de reabertura de evento arquivado (instalações anteriores
 -- a 2026-06-13). Seguro rodar mais de uma vez.
@@ -579,11 +610,12 @@ create policy "Admin gerencia fotos de eventos"
 
 -- insert into events (type, name, description, starts_at, ends_at, status,
 --                     pix_key, pix_merchant_name, pix_merchant_city,
---                     raffle_total_numbers, raffle_number_price, raffle_prize)
+--                     raffle_total_numbers, raffle_number_price, raffle_prize, raffle_prizes)
 -- values ('rifa', 'Rifa de Teste', 'Apenas para testes — apague depois.',
 --         current_date, current_date + 30, 'ativo',
 --         'chave@pix.com', 'Abrigo da Marcia', 'Ribeirao Preto',
---         100, 10.00, 'Cesta de prêmios');
+--         100, 10.00, 'Cesta de prêmios',
+--         '[{"name":"Cesta de prêmios","image_url":"","winner_number":null}]'::jsonb);
 
 -- select create_reservation(
 --   (select id from events where name = 'Rifa de Teste'),

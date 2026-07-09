@@ -3,11 +3,13 @@
 // (core/* + camada de dados) e as queries saíram para os repositórios.
 import { requireAdminSession } from '../core/auth.js';
 import { esc } from '../core/dom.js';
+import { normalizeRafflePrizes, prizeDisplayName } from '../core/raffle-prizes.js';
 import * as Events from '../data/events.js';
 import * as Reservations from '../data/reservations.js';
 
 let raffles      = [];     // rifas elegíveis (ativo/encerrado)
 let currentEvent = null;
+let selectedPrizeIndex = 0;
 let pool         = [];     // [{number, firstName}] — números pagos
 let drawn        = null;   // resultado sorteado ainda não confirmado
 let spinning     = false;
@@ -44,6 +46,30 @@ function pickRandom(list) {
     const buf = new Uint32Array(1);
     crypto.getRandomValues(buf);
     return list[buf[0] % list.length];
+}
+
+function currentPrizes() {
+    return normalizeRafflePrizes(currentEvent || {});
+}
+
+function currentPrize() {
+    return currentPrizes()[selectedPrizeIndex] || null;
+}
+
+function winnerNumbersExceptSelected() {
+    return currentPrizes().map(function(prize, i) {
+        return i === selectedPrizeIndex ? null : prize.winner_number;
+    }).filter(function(n) { return n != null; });
+}
+
+function availablePool() {
+    const blocked = winnerNumbersExceptSelected();
+    return pool.filter(function(entry) { return blocked.indexOf(entry.number) === -1; });
+}
+
+function firstPrizeWithoutWinner(prizes) {
+    const idx = prizes.findIndex(function(prize) { return prize.winner_number == null; });
+    return idx === -1 ? 0 : idx;
 }
 
 // ── Auth guard ──────────────────────────────────────────
@@ -85,10 +111,28 @@ async function selectEvent(id) {
     if (!currentEvent) return;
     document.getElementById('event-select').value = id;
     document.getElementById('stage-event-name').textContent = currentEvent.name;
-    document.getElementById('stage-prize').textContent =
-        currentEvent.raffle_prize ? 'Prêmio: ' + currentEvent.raffle_prize : '';
+    selectedPrizeIndex = firstPrizeWithoutWinner(currentPrizes());
+    renderPrizeOptions();
     await loadPool();
     renderStage();
+}
+
+function renderPrizeOptions() {
+    const select = document.getElementById('prize-select');
+    const prizes = currentPrizes();
+    if (!prizes.length) {
+        select.innerHTML = '<option value="">Nenhum prêmio cadastrado</option>';
+        select.disabled = true;
+        selectedPrizeIndex = 0;
+        return;
+    }
+    if (selectedPrizeIndex < 0 || selectedPrizeIndex >= prizes.length) selectedPrizeIndex = 0;
+    select.disabled = false;
+    select.innerHTML = prizes.map(function(prize, i) {
+        const status = prize.winner_number ? ' — nº ' + prize.winner_number : '';
+        return '<option value="' + i + '">' + esc(prizeDisplayName(prize, i)) + status + '</option>';
+    }).join('');
+    select.value = String(selectedPrizeIndex);
 }
 
 // ── Números elegíveis (status pago ou entregue) ─────────
@@ -110,6 +154,8 @@ async function loadPool() {
 function setStageMessage(title, hint) {
     document.getElementById('stage-event-name').textContent = title;
     document.getElementById('stage-prize').textContent = '';
+    document.getElementById('prize-select').innerHTML = '<option value="">Prêmios…</option>';
+    document.getElementById('prize-select').disabled = true;
     document.getElementById('stage-pool').textContent = '';
     document.getElementById('stage-winner').textContent = '';
     document.getElementById('stage-actions').innerHTML = '';
@@ -119,23 +165,43 @@ function setStageMessage(title, hint) {
 function renderStage() {
     if (!currentEvent) return;
     hideAlert();
+    renderPrizeOptions();
+    const prize = currentPrize();
+    const drawPool = availablePool();
     const circle  = document.getElementById('number-circle');
     const numberEl = document.getElementById('stage-number');
     const winnerEl = document.getElementById('stage-winner');
     const actions  = document.getElementById('stage-actions');
     const hint     = document.getElementById('stage-hint');
     const poolEl   = document.getElementById('stage-pool');
+    const prizeEl  = document.getElementById('stage-prize');
 
-    poolEl.textContent = pool.length
-        ? pool.length + ' número' + (pool.length !== 1 ? 's' : '') + ' pago' + (pool.length !== 1 ? 's' : '') + ' participando'
-        : 'Nenhum número pago ainda';
+    if (prize) {
+        prizeEl.innerHTML =
+            (prize.image_url ? '<img src="' + esc(prize.image_url) + '" alt="">' : '') +
+            '<span>Prêmio: ' + esc(prizeDisplayName(prize, selectedPrizeIndex)) + '</span>';
+    } else {
+        prizeEl.textContent = '';
+    }
+
+    poolEl.textContent = drawPool.length
+        ? drawPool.length + ' número' + (drawPool.length !== 1 ? 's' : '') + ' pago' + (drawPool.length !== 1 ? 's' : '') + ' participando'
+        : (pool.length ? 'Nenhum número elegível restante para este prêmio' : 'Nenhum número pago ainda');
     circle.classList.remove('spinning', 'winner');
 
+    if (!prize) {
+        numberEl.textContent = '?';
+        winnerEl.textContent = '';
+        actions.innerHTML = '';
+        hint.textContent = 'Cadastre ao menos um prêmio nesta rifa antes de sortear.';
+        return;
+    }
+
     // Estado 1: resultado já confirmado no banco
-    if (currentEvent.raffle_winner_number != null && !drawn) {
-        const entry = pool.find(p => p.number === currentEvent.raffle_winner_number);
+    if (prize.winner_number != null && !drawn) {
+        const entry = pool.find(p => p.number === prize.winner_number);
         circle.classList.add('winner');
-        numberEl.textContent = currentEvent.raffle_winner_number;
+        numberEl.textContent = prize.winner_number;
         winnerEl.innerHTML = entry
             ? 'Parabéns, <strong>' + esc(entry.firstName) + '</strong>! ' + GIFT_SVG
             : '';
@@ -161,23 +227,26 @@ function renderStage() {
     // Estado 3: pronto para sortear
     numberEl.textContent = '?';
     winnerEl.textContent = '';
-    if (pool.length) {
+    if (drawPool.length) {
         actions.innerHTML = '<button class="btn btn-primary btn-big" id="draw-btn">Sortear ' + DICE_SVG + '</button>';
         hint.textContent = 'Somente números com pagamento confirmado (Pago ou Entregue) participam.';
     } else {
         actions.innerHTML = '';
-        hint.textContent = 'Marque reservas como "Pago" no painel de eventos para liberar o sorteio.';
+        hint.textContent = pool.length
+            ? 'Os números vencedores de outros prêmios não participam novamente.'
+            : 'Marque reservas como "Pago" no painel de eventos para liberar o sorteio.';
     }
 }
 
 // ── Animação da roleta ──────────────────────────────────
 function spin() {
-    if (spinning || !pool.length) return;
+    const drawPool = availablePool();
+    if (spinning || !drawPool.length) return;
     spinning = true;
     drawn = null;
     hideAlert();
 
-    const result   = pickRandom(pool);
+    const result   = pickRandom(drawPool);
     const circle   = document.getElementById('number-circle');
     const numberEl = document.getElementById('stage-number');
     document.getElementById('stage-winner').textContent = '';
@@ -199,7 +268,7 @@ function spin() {
             renderStage();
             return;
         }
-        numberEl.textContent = pickRandom(pool).number;
+        numberEl.textContent = pickRandom(drawPool).number;
         // intervalo cresce de 50ms até ~350ms no fim
         const t = elapsed / DURATION;
         setTimeout(tick, 50 + 300 * t * t);
@@ -211,13 +280,22 @@ async function confirmResult() {
     if (!drawn) return;
     const btn = document.getElementById('confirm-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
-    const { error } = await Events.updateEvent(currentEvent.id, { raffle_winner_number: drawn.number });
+    const prizes = currentPrizes();
+    if (!prizes[selectedPrizeIndex]) return;
+    prizes[selectedPrizeIndex].winner_number = drawn.number;
+    const { error } = await Events.updateEvent(currentEvent.id, {
+        raffle_prizes: prizes,
+        raffle_prize: prizes[0] ? prizes[0].name : null,
+        raffle_winner_number: prizes[0] ? prizes[0].winner_number : null
+    });
     if (error) {
         showAlert('Erro ao salvar: ' + error.message);
         if (btn) { btn.disabled = false; btn.textContent = 'Confirmar resultado'; }
         return;
     }
-    currentEvent.raffle_winner_number = drawn.number;
+    currentEvent.raffle_prizes = prizes;
+    currentEvent.raffle_prize = prizes[0] ? prizes[0].name : null;
+    currentEvent.raffle_winner_number = prizes[0] ? prizes[0].winner_number : null;
     drawn = null;
     renderStage();
 }
@@ -227,9 +305,18 @@ async function redoDraw() {
         'Refazer o sorteio? O resultado atual será removido da página pública até você confirmar um novo número.'
     );
     if (!ok) return;
-    const { error } = await Events.updateEvent(currentEvent.id, { raffle_winner_number: null });
+    const prizes = currentPrizes();
+    if (!prizes[selectedPrizeIndex]) return;
+    prizes[selectedPrizeIndex].winner_number = null;
+    const { error } = await Events.updateEvent(currentEvent.id, {
+        raffle_prizes: prizes,
+        raffle_prize: prizes[0] ? prizes[0].name : null,
+        raffle_winner_number: prizes[0] ? prizes[0].winner_number : null
+    });
     if (error) { showAlert('Erro: ' + error.message); return; }
-    currentEvent.raffle_winner_number = null;
+    currentEvent.raffle_prizes = prizes;
+    currentEvent.raffle_prize = prizes[0] ? prizes[0].name : null;
+    currentEvent.raffle_winner_number = prizes[0] ? prizes[0].winner_number : null;
     drawn = null;
     renderStage();
 }
@@ -263,6 +350,11 @@ function hideAlert() {
 function bindEvents() {
     document.getElementById('event-select').addEventListener('change', function() {
         if (this.value) selectEvent(this.value);
+    });
+    document.getElementById('prize-select').addEventListener('change', function() {
+        selectedPrizeIndex = Number(this.value) || 0;
+        drawn = null;
+        renderStage();
     });
     document.getElementById('reload-btn').addEventListener('click', async function() {
         if (!currentEvent || spinning) return;

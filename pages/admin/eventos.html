@@ -12,7 +12,7 @@
             document.documentElement.setAttribute('data-theme', t);
         })();
     </script>
-    <link rel="stylesheet" href="../../styles/admin.css?v=11">
+    <link rel="stylesheet" href="../../styles/admin.css?v=12">
 </head>
 <body>
 
@@ -188,15 +188,17 @@
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="ev-raffle-prize">Prêmio</label>
-                            <input id="ev-raffle-prize" type="text" maxlength="200" placeholder="Ex: Cesta de café da manhã">
-                        </div>
-                        <div class="form-group">
                             <label for="ev-raffle-max">Máx. de números por reserva
                                 <span class="tooltip-icon" tabindex="0" data-tip="Quantos números uma mesma pessoa pode reservar de uma vez. Padrão: 5.">?</span>
                             </label>
                             <input id="ev-raffle-max" type="number" min="1" max="50" value="5" placeholder="5">
                         </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Prêmios da rifa</label>
+                        <div id="ev-raffle-prizes-list"></div>
+                        <button type="button" class="btn btn-ghost btn-sm" id="ev-add-raffle-prize">+ Adicionar prêmio</button>
+                        <small class="muted-hint">Até 3 prêmios. Cada prêmio é sorteado separadamente.</small>
                     </div>
                 </div>
 
@@ -345,7 +347,7 @@
         </div>
     </div>
 
-    <script type="module" src="../../js/pages/admin-eventos.js?v=1"></script>
+    <script type="module" src="../../js/pages/admin-eventos.js?v=2"></script>
     <script src="../../js/theme-toggle.js?v=2"></script>
 </body>
 </html>

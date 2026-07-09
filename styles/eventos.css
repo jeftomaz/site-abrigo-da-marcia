@@ -64,9 +64,33 @@ main .event-description {
     white-space: pre-line;
 }
 
-main .event-prize {
+main .event-prizes {
     font-size: 18px;
     text-align: left;
+}
+
+main .event-prize-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+main .event-prize {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    background-color: #fff8ef;
+}
+
+main .event-prize img {
+    width: 44px;
+    height: 44px;
+    border-radius: 6px;
+    object-fit: cover;
 }
 
 /* Barra de progresso da meta */
@@ -1021,6 +1045,11 @@ main #past-events-list {
 [data-theme="dark"] .past-event-result,
 [data-theme="dark"] #reserve-success-summary {
     color: #e8e8e8;
+}
+
+[data-theme="dark"] main .event-prize {
+    background-color: #262626;
+    border-color: #333;
 }
 
 [data-theme="dark"] main .event-goal-bar { background-color: #333; }

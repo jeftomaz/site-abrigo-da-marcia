@@ -7,6 +7,7 @@
 // Módulo ES (Fase D): leitura/RPC anon via core/rest.js (fetchJson). PixBRCode
 // (js/pix.js) e QRCode (qrcodejs) continuam globais clássicos.
 import { fetchJson } from './core/rest.js';
+import { normalizeRafflePrizes, prizeDisplayName } from './core/raffle-prizes.js';
 
 (function() {
     // Mensagens amigáveis para os códigos de erro da RPC
@@ -154,12 +155,32 @@ import { fetchJson } from './core/rest.js';
             info.appendChild(desc);
         }
 
-        if (ev.type === 'rifa' && ev.raffle_prize) {
-            var prize = document.createElement('p');
-            prize.className = 'event-prize';
-            prize.innerHTML = '<strong>Prêmio:</strong> ';
-            prize.appendChild(document.createTextNode(ev.raffle_prize));
-            info.appendChild(prize);
+        var rafflePrizes = ev.type === 'rifa' ? normalizeRafflePrizes(ev) : [];
+        if (rafflePrizes.length) {
+            var prizes = document.createElement('div');
+            prizes.className = 'event-prizes';
+            var heading = document.createElement('strong');
+            heading.textContent = rafflePrizes.length > 1 ? 'Prêmios:' : 'Prêmio:';
+            prizes.appendChild(heading);
+            var list = document.createElement('div');
+            list.className = 'event-prize-list';
+            rafflePrizes.forEach(function(prize, i) {
+                var item = document.createElement('div');
+                item.className = 'event-prize';
+                if (prize.image_url) {
+                    var img = document.createElement('img');
+                    img.src = prize.image_url;
+                    img.alt = prizeDisplayName(prize, i);
+                    img.loading = 'lazy';
+                    item.appendChild(img);
+                }
+                var name = document.createElement('span');
+                name.textContent = prizeDisplayName(prize, i);
+                item.appendChild(name);
+                list.appendChild(item);
+            });
+            prizes.appendChild(list);
+            info.appendChild(prizes);
         }
 
         // Barra de progresso — rifa: números vendidos (valores arrecadados
@@ -217,10 +238,17 @@ import { fetchJson } from './core/rest.js';
 
         // Banner do número sorteado — só o número (nenhum dado pessoal
         // na página pública; o nome do ganhador é anunciado na transmissão)
-        if (ev.raffle_winner_number) {
+        var rafflePrizes = normalizeRafflePrizes(ev);
+        var winnerNumbers = rafflePrizes
+            .map(function(prize) { return prize.winner_number; })
+            .filter(function(n) { return n != null; });
+        if (!winnerNumbers.length && ev.raffle_winner_number) winnerNumbers = [ev.raffle_winner_number];
+        if (winnerNumbers.length) {
             var winner = document.createElement('div');
             winner.className = 'raffle-winner';
-            winner.textContent = 'Número sorteado: ' + ev.raffle_winner_number + ' — parabéns ao ganhador!';
+            winner.textContent = winnerNumbers.length === 1
+                ? 'Número sorteado: ' + winnerNumbers[0] + ' — parabéns ao ganhador!'
+                : 'Números sorteados: ' + winnerNumbers.join(', ') + ' — parabéns aos ganhadores!';
             section.appendChild(winner);
         }
 
@@ -271,13 +299,13 @@ import { fetchJson } from './core/rest.js';
                 cell.setAttribute('aria-label', 'Selecionar número ' + n);
                 cell.setAttribute('aria-pressed', 'false');
             }
-            if (ev.raffle_winner_number === n) cell.classList.add('is-winner');
+            if (winnerNumbers.indexOf(n) !== -1) cell.classList.add('is-winner');
             fragment.appendChild(cell);
         }
         grid.appendChild(fragment);
         section.appendChild(grid);
 
-        if (!clickable && !ev.raffle_winner_number) {
+        if (!clickable && !winnerNumbers.length) {
             var closed = document.createElement('p');
             closed.className = 'raffle-closed';
             closed.textContent = 'Este evento não está recebendo novas reservas.';
@@ -316,8 +344,13 @@ import { fetchJson } from './core/rest.js';
 
             // Resultado: summary (pós-limpeza LGPD) ou número sorteado
             var resultParts = [];
-            if (ev.type === 'rifa' && ev.raffle_winner_number) {
-                resultParts.push('Número sorteado: ' + ev.raffle_winner_number);
+            if (ev.type === 'rifa') {
+                var winners = normalizeRafflePrizes(ev)
+                    .map(function(prize) { return prize.winner_number; })
+                    .filter(function(n) { return n != null; });
+                if (!winners.length && ev.raffle_winner_number) winners = [ev.raffle_winner_number];
+                if (winners.length)
+                    resultParts.push((winners.length === 1 ? 'Número sorteado: ' : 'Números sorteados: ') + winners.join(', '));
             }
             if (ev.summary && ev.summary.total_raised > 0) {
                 resultParts.push(formatMoney(ev.summary.total_raised) + ' arrecadados');

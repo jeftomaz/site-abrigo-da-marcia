@@ -8,6 +8,7 @@ import { requireAdminSession } from '../core/auth.js';
 import { esc, slugify, formatMoney, formatDate } from '../core/dom.js';
 import { ICON_LABEL_SVG } from '../core/icons.js';
 import { compressImage } from '../core/image.js';
+import { MAX_RAFFLE_PRIZES, emptyRafflePrize, normalizeRafflePrizes } from '../core/raffle-prizes.js';
 import { adminToast } from '../ui/toast.js';
 import { MAX_PHOTOS, PIX_DEFAULTS, STATUS_LABEL, EVENT_STATUS_LABEL } from '../config.js';
 import * as Events from '../data/events.js';
@@ -20,6 +21,7 @@ let allEvents     = [];
 let editingEventId = null;
 let coverItem     = { url: null, file: null };   // capa do evento
 let photoItems    = [];                           // galeria: {url,file,preview}
+let rafflePrizeItems = [];                        // rifa: {name,image_url,file,preview,winner_number}
 
 let currentEvent  = null;                         // evento selecionado p/ reservas
 let allReservations = [];                         // reservas do evento atual (com itens)
@@ -222,6 +224,9 @@ async function removeEventPhotos(ev) {
     const urls = [];
     if (ev.cover_url) urls.push(ev.cover_url);
     (ev.gallery || []).forEach(function(u) { if (u) urls.push(u); });
+    normalizeRafflePrizes(ev).forEach(function(prize) {
+        if (prize.image_url) urls.push(prize.image_url);
+    });
     const marker = '/event-photos/';
     const paths = urls.map(function(u) {
         const i = u.indexOf(marker);
@@ -248,6 +253,10 @@ function toggleTypeFields() {
     const type = document.getElementById('ev-type').value;
     document.getElementById('ev-raffle-fields').style.display    = type === 'rifa'  ? '' : 'none';
     document.getElementById('ev-products-section').style.display = type === 'venda' ? '' : 'none';
+    if (type === 'rifa' && !rafflePrizeItems.length) {
+        rafflePrizeItems = [emptyRafflePrize()];
+        renderRafflePrizes();
+    }
     // Venda exige ≥1 produto: garante um card inicial.
     if (type === 'venda' && !document.querySelector('#ev-products-list .ev-product-card'))
         addProductCard(null);
@@ -316,7 +325,6 @@ async function openEventModal(ev) {
     document.getElementById('ev-goal').value         = ev && ev.goal_amount != null ? ev.goal_amount : '';
     document.getElementById('ev-raffle-total').value = ev && ev.raffle_total_numbers != null ? ev.raffle_total_numbers : '';
     document.getElementById('ev-raffle-price').value = ev && ev.raffle_number_price != null ? ev.raffle_number_price : '';
-    document.getElementById('ev-raffle-prize').value = ev && ev.raffle_prize ? ev.raffle_prize : '';
     document.getElementById('ev-raffle-max').value   = ev && ev.raffle_max_per_reservation != null ? ev.raffle_max_per_reservation : 5;
     // PIX: pré-preenche com os dados padrão do abrigo (PIX_DEFAULTS, em config.js)
     // quando o evento não tem valor próprio — admin pode editar.
@@ -338,6 +346,20 @@ async function openEventModal(ev) {
     renderPhotos();
     document.getElementById('ev-photos-file').value = '';
 
+    rafflePrizeItems = (ev && ev.type === 'rifa' ? normalizeRafflePrizes(ev) : [])
+        .map(function(item) {
+            return {
+                name: item.name,
+                image_url: item.image_url,
+                file: null,
+                preview: item.image_url,
+                winner_number: item.winner_number
+            };
+        });
+    if ((!ev || (ev && ev.type === 'rifa')) && !rafflePrizeItems.length)
+        rafflePrizeItems = [emptyRafflePrize()];
+    renderRafflePrizes();
+
     // produtos (venda): carrega os existentes ao editar
     document.getElementById('ev-products-list').innerHTML = '';
     formProductImages = {};
@@ -355,6 +377,8 @@ function closeEventModal() {
     editingEventId = null;
     coverItem = { url: null, file: null };
     photoItems = [];
+    rafflePrizeItems = [];
+    renderRafflePrizes();
     document.getElementById('ev-products-list').innerHTML = '';
     formProductImages = {};
     loadedProductIds = [];
@@ -425,6 +449,98 @@ document.getElementById('ev-photos-file').addEventListener('change', async funct
     }
 });
 
+// ── Prêmios da rifa ────────────────────────────────────
+function renderRafflePrizes() {
+    const list = document.getElementById('ev-raffle-prizes-list');
+    if (!list) return;
+    list.innerHTML = '';
+    rafflePrizeItems.forEach(function(item, i) {
+        const card = document.createElement('div');
+        card.className = 'raffle-prize-card';
+        card.dataset.index = i;
+        const preview = item.preview || item.image_url || '';
+        card.innerHTML =
+            '<button type="button" class="raffle-prize-img js-raffle-prize-img" aria-label="Escolher imagem do prêmio">' +
+                (preview
+                    ? '<img src="' + esc(preview) + '" alt="">'
+                    : '<span>Imagem</span>') +
+            '</button>' +
+            '<div class="raffle-prize-fields">' +
+                '<input type="text" class="js-raffle-prize-name" maxlength="120" placeholder="Nome do prêmio" value="' + esc(item.name || '') + '">' +
+                (item.winner_number
+                    ? '<small class="muted-hint">Sorteado: nº ' + item.winner_number + '</small>'
+                    : '<small class="muted-hint">Será sorteado separadamente</small>') +
+            '</div>' +
+            '<button type="button" class="btn btn-ghost btn-sm js-raffle-prize-remove" aria-label="Remover prêmio">&times;</button>' +
+            '<input type="file" class="js-raffle-prize-file" accept="image/jpeg,image/jpg,image/png,image/webp" style="display:none">';
+        list.appendChild(card);
+    });
+    document.getElementById('ev-add-raffle-prize').disabled = rafflePrizeItems.length >= MAX_RAFFLE_PRIZES;
+}
+
+document.getElementById('ev-add-raffle-prize').addEventListener('click', function() {
+    if (rafflePrizeItems.length >= MAX_RAFFLE_PRIZES) return;
+    rafflePrizeItems.push(emptyRafflePrize());
+    renderRafflePrizes();
+});
+
+document.getElementById('ev-raffle-prizes-list').addEventListener('input', function(e) {
+    const input = e.target.closest('.js-raffle-prize-name');
+    if (!input) return;
+    const card = input.closest('.raffle-prize-card');
+    rafflePrizeItems[Number(card.dataset.index)].name = input.value;
+});
+
+document.getElementById('ev-raffle-prizes-list').addEventListener('click', function(e) {
+    const card = e.target.closest('.raffle-prize-card');
+    if (!card) return;
+    const idx = Number(card.dataset.index);
+    if (e.target.closest('.js-raffle-prize-img')) {
+        card.querySelector('.js-raffle-prize-file').click();
+        return;
+    }
+    if (e.target.closest('.js-raffle-prize-remove')) {
+        rafflePrizeItems.splice(idx, 1);
+        if (!rafflePrizeItems.length) rafflePrizeItems.push(emptyRafflePrize());
+        renderRafflePrizes();
+    }
+});
+
+document.getElementById('ev-raffle-prizes-list').addEventListener('change', async function(e) {
+    const input = e.target.closest('.js-raffle-prize-file');
+    if (!input) return;
+    const card = input.closest('.raffle-prize-card');
+    const idx = Number(card.dataset.index);
+    const file = (input.files || [])[0];
+    input.value = '';
+    if (!file) return;
+    const ready = await prepareImage(file, 'A imagem do prêmio');
+    if (!ready) return;
+    rafflePrizeItems[idx].file = ready.file;
+    rafflePrizeItems[idx].preview = ready.preview;
+    rafflePrizeItems[idx].image_url = '';
+    renderRafflePrizes();
+});
+
+function collectRafflePrizes() {
+    const prizes = rafflePrizeItems.map(function(item) {
+        return {
+            name: String(item.name || '').trim(),
+            image_url: item.image_url || '',
+            file: item.file || null,
+            winner_number: item.winner_number || null
+        };
+    }).filter(function(item) {
+        return item.name || item.image_url || item.file || item.winner_number;
+    });
+    if (!prizes.length) throw new Error('Cadastre ao menos um prêmio para a rifa.');
+    if (prizes.length > MAX_RAFFLE_PRIZES) throw new Error('A rifa pode ter no máximo 3 prêmios.');
+    prizes.forEach(function(item, i) {
+        if (item.name.length < 2) throw new Error('O prêmio ' + (i + 1) + ' precisa de um nome.');
+    });
+    return prizes;
+}
+
 // Comprime a imagem (compressImage de core/image.js) e devolve { file, preview }
 // pronto para uso; null em caso de erro (já avisa por toast). `label`
 // personaliza a mensagem de "passou de 5 MB".
@@ -467,6 +583,9 @@ document.getElementById('event-form').addEventListener('submit', async function(
         if (type === 'rifa' && (!rTotal || !rPrice))
             throw new Error('Rifa exige quantidade de números e valor por número.');
 
+        let rafflePrizes = [];
+        if (type === 'rifa') rafflePrizes = collectRafflePrizes();
+
         // Venda: valida os produtos antes de gravar o evento (falha cedo).
         let formProducts = [];
         if (type === 'venda') formProducts = collectFormProducts();
@@ -482,6 +601,18 @@ document.getElementById('event-form').addEventListener('submit', async function(
         for (const item of photoItems) {
             if (item.file) gallery.push(await Events.uploadEventImage(item.file, slug));
             else if (item.url) gallery.push(item.url);
+        }
+
+        const savedRafflePrizes = [];
+        for (let i = 0; i < rafflePrizes.length; i++) {
+            const prize = rafflePrizes[i];
+            let imageUrl = prize.image_url;
+            if (prize.file) imageUrl = await Events.uploadEventImage(prize.file, slug + '-premio-' + (i + 1));
+            savedRafflePrizes.push({
+                name: prize.name,
+                image_url: imageUrl || '',
+                winner_number: prize.winner_number || null
+            });
         }
 
         const goal = document.getElementById('ev-goal').value;
@@ -502,7 +633,9 @@ document.getElementById('event-form').addEventListener('submit', async function(
             raffle_total_numbers: type === 'rifa' ? Number(rTotal) : null,
             raffle_number_price:  type === 'rifa' ? Number(rPrice) : null,
             raffle_max_per_reservation: type === 'rifa' ? (Number(document.getElementById('ev-raffle-max').value) || 5) : 5,
-            raffle_prize: type === 'rifa' ? (document.getElementById('ev-raffle-prize').value.trim() || null) : null
+            raffle_prizes: type === 'rifa' ? savedRafflePrizes : [],
+            raffle_prize: type === 'rifa' && savedRafflePrizes[0] ? savedRafflePrizes[0].name : null,
+            raffle_winner_number: type === 'rifa' && savedRafflePrizes[0] ? savedRafflePrizes[0].winner_number : null
         };
 
         let eventId = editingEventId;
